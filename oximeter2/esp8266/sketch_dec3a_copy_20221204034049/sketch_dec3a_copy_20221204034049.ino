@@ -96,7 +96,7 @@ void loop() {
       Serial.println("%");
 
       tsLastReport = millis();
-      String httpRequestData = "api_key=" + apiKeyValue + "&value2=" + String(pox.getHeartRate()) + "&value3=" + String(pox.getSpO2() + "";
+      String httpRequestData = "api_key=" + apiKeyValue + "&bpm=" + String(pox.getHeartRate()) + "&o2=" + String(pox.getSpO2() + "";
       Serial.print("httpRequestData: ");
       Serial.println(httpRequestData);
 
