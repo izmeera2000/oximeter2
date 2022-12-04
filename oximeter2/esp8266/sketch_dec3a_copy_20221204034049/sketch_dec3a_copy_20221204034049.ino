@@ -1,136 +1,225 @@
-/*
-  Rui Santos
-  Complete project details at https://RandomNerdTutorials.com/esp32-esp8266-mysql-database-php/
-  
-  Permission is hereby granted, free of charge, to any person obtaining a copy
-  of this software and associated documentation files.
-  
-  The above copyright notice and this permission notice shall be included in all
-  copies or substantial portions of the Software.
+//HEART RATE AND OXYGEN SATURATION CLOUD STORAGE BASED FOR REMOTE PATIENT
+//blynk akaun berbayar   uname : 29221097@adtectaiping.edu.my
+//                       pwd :adtectaiping2022
 
-*/
+// #define BLYNK_TEMPLATE_ID "TMPLHQPlWoZS"
+// #define BLYNK_DEVICE_NAME "REMOTE PATIENT MONITORING SYSTEM"
+// #define BLYNK_AUTH_TOKEN "OOHrk_fEv6ftdQW4Y6mdqFDUSMf4QEP6"
 
-
-#include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
-#include <WiFiClient.h>
-
-#include <Wire.h>
-#include "MAX30100_PulseOximeter.h"
 #define REPORTING_PERIOD_MS 1000
 
-// Replace with your network credentials
-const char* ssid = "Azure4as";
-const char* password = "sarimah78";
+#include <Adafruit_GFX.h>  //OLED libraries
+#include <Adafruit_SSD1306.h>
+#include <Wire.h>
+#include "MAX30100_PulseOximeter.h"
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <ESP8266WiFi.h>  // wifi
+// #include <Blynk.h>
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
+// #include <BlynkSimpleEsp8266.h>
 
-// REPLACE with your Domain name and URL path or IP address with path
-const char* serverName = "http://192.168.0.101/oximeter2/public/index";
-
-// Keep this API Key value to be compatible with the PHP code provided in the project page.
-// If you change the apiKeyValue value, the PHP file /post-esp-data.php also needs to have the same key
-String apiKeyValue = "secret";
-
+// PulseOximeter is the higher level interface to the sensor
+// it offers:
+//  * heart rate calculation
+//  * SpO2 (oxidation level) calculation
 PulseOximeter pox;
+
 uint32_t tsLastReport = 0;
 
-void onBeatDetected() {
-  Serial.println("♥ Beat!");
-}
-/*#include <SPI.h>
-#define BME_SCK 18
-#define BME_MISO 19
-#define BME_MOSI 23
-#define BME_CS 5*/
+//wifi
+const char *ssid = "afa2020_2.4Ghz@unifi";  // afa2020_2.4Ghz@unifi , KOMPUTER, vivo1713
+const char *pass = "vae585910";             // vae585910 , NIL, vae585910
+// char auth[] = BLYNK_AUTH_TOKEN;
+// BlynkTimer timer;
+// WiFiClient client;
+String apiKeyValue = "secret";
+
+
+//server
+const char *serverName = "http://192.168.0.101/oximeter2/public/index.php";
+//gunakan ip untuk local server
+
+
+
+//TinyGPSPlus gps;
+//SoftwareSerial SerialGPS(4, 5); //GPIO 4 & 5
+// #define BLYNK_PRINT Serial
+
+float Latitude, Longitude;
+int bpm, spo;
+
+//OLED
+#define SCREEN_WIDTH 128  // OLED display width, in pixels
+#define SCREEN_HEIGHT 32  // OLED display height, in pixels 32
+#define OLED_RESET -1     // Reset pin # (or -1 if sharing Arduino reset pin)
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);  //Declaring the display name (display)
+
+//LED
+#define LED_pin7 D7  // tentukan nama device pada pin
+#define LED_pin6 D6
+#define LED_pin5 D5
+#define LED_pin4 D4
+#define LED_pin3 D3
+#define LED_pin8 D8
+
+
 
 
 void setup() {
   Serial.begin(115200);
+  //  SerialGPS.begin(9600);
+  // Blynk.begin(auth, ssid, pass);
 
+  //Wifi connection
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(200);
+    Serial.print("..");
+  }
+  Serial.println();
+  Serial.println("Congrats... NodeMCU is connected!");
+  Serial.println(WiFi.localIP());
+  // dht.begin();
+
+
+  //OLED
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  //Start the OLED display
+  display.display();
+  delay(3000);
+  //asalnya
   Serial.print("Initializing pulse oximeter..");
 
-  // Initialize sensor
+  // Initialize the PulseOximeter instance
+  // Failures are generally due to an improper I2C wiring, missing power supply
+  // or wrong target chip
   if (!pox.begin()) {
     Serial.println("FAILED");
     for (;;)
       ;
-  } else {
+  } else
     Serial.println("SUCCESS");
-  }
-
-  WiFi.begin(ssid, password);
-  Serial.println("Connecting");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.print("Connected to WiFi network with IP Address: ");
-  Serial.println(WiFi.localIP());
-
-  // (you can also pass in a Wire library object like &Wire2)
-  // Configure sensor to use 7.6mA for LED drive
-  pox.setIRLedCurrent(MAX30100_LED_CURR_7_6MA);
-
-  // Register a callback routine
-  pox.setOnBeatDetectedCallback(onBeatDetected);
+  // {
+  //   // timer.setInterval(3000L, timer1);
+  // }
+  //LED
+  pinMode(LED_pin7, OUTPUT);  // declare pin samada input @ output
+  pinMode(LED_pin6, OUTPUT);
+  pinMode(LED_pin5, OUTPUT);
+  pinMode(LED_pin4, OUTPUT);
+  pinMode(LED_pin3, OUTPUT);
+  pinMode(LED_pin8, OUTPUT);
 }
 
 void loop() {
+  // Make sure to call update as fast as possible
   pox.update();
+  // timer.run();
+  // Blynk.run();
 
-  //Check WiFi connection status
-  if (WiFi.status() == WL_CONNECTED) {
-    WiFiClient client;
-    HTTPClient http;
 
-    // Your Domain name with URL path or IP address with path
-    http.begin(client, serverName);
+  // Asynchronously dump heart rate and oxidation levels to the serial
+  // For both, a value of 0 means "invalid"
+  if (millis() - tsLastReport > REPORTING_PERIOD_MS) {
 
-    // Specify content-type header
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    if (millis() - tsLastReport > REPORTING_PERIOD_MS) {
-      Serial.print("Heart rate:");
-      Serial.print(pox.getHeartRate());
-      Serial.print("bpm / SpO2:");
-      Serial.print(pox.getSpO2());
-      Serial.println("%");
+    tsLastReport = millis();
 
-      tsLastReport = millis();
-      String httpRequestData = "api_key=" + apiKeyValue + "&bpm=" + String(pox.getHeartRate()) + "&o2=" + String(pox.getSpO2() + "";
-      Serial.print("httpRequestData: ");
-      Serial.println(httpRequestData);
+    display.clearDisplay();  //Clear the display
+    display.setTextSize(1);  //Near it display the average BPM you can display the BPM if you want
+    display.setTextColor(WHITE);
+    display.setCursor(30, 0);
+    display.println("BPM");
+    display.setCursor(30, 8);
+    display.println(bpm);
+    display.setCursor(90, 0);  //80,0
+    display.println("SpO2");
+    display.setCursor(90, 8);  // 82,18
+    display.println(spo);
+    display.setCursor(0, 16);  //80,0
+    display.println("Lat   :");
+    display.setCursor(0, 24);  //80,0
+    display.println("Long  :");
+    display.display();
 
-      int httpResponseCode = http.POST(httpRequestData);
+    Serial.print("Heart rate:");
+    Serial.print(pox.getHeartRate());
+    Serial.print("bpm    SpO2:");  //"bpm / SpO2:"
+    Serial.print(pox.getSpO2());
+    Serial.println("%");
+
+
+    if (pox.getHeartRate() < 60) {
+      digitalWrite(LED_pin5, HIGH);  //LED MERAH on
+      digitalWrite(LED_pin7, LOW);   //LED HIJAU on
+      digitalWrite(LED_pin6, LOW);   //LED KUNING on
     }
-    // Prepare your HTTP POST request data
-
-
-    // You can comment the httpRequestData variable above
-    // then, use the httpRequestData variable below (for testing purposes without the BME280 sensor)
-    //String httpRequestData = "api_key=tPmAT5Ab3j7F9&sensor=BME280&location=Office&value1=24.75&value2=49.54&value3=1005.14";
-
-    // Send HTTP POST request
-
-    // If you need an HTTP request with a content type: text/plain
-    //http.addHeader("Content-Type", "text/plain");
-    //int httpResponseCode = http.POST("Hello, World!");
-
-    // If you need an HTTP request with a content type: application/json, use the following:
-    //http.addHeader("Content-Type", "application/json");
-    //int httpResponseCode = http.POST("{\"value1\":\"19\",\"value2\":\"67\",\"value3\":\"78\"}");
-
-    if (httpResponseCode > 0) {
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-    } else {
-      Serial.print("Error code: ");
-      Serial.println(httpResponseCode);
+    if (pox.getHeartRate() > 100) {
+      digitalWrite(LED_pin6, HIGH);  //LED KUNING on
+      digitalWrite(LED_pin5, LOW);   //LED MERAH on
+      digitalWrite(LED_pin7, LOW);   //LED HIJAU on
     }
-    // Free resources
-    http.end();
-  } else {
-    Serial.println("WiFi Disconnected");
+    if (pox.getHeartRate() > 60 && pox.getHeartRate() < 100) {
+      digitalWrite(LED_pin7, HIGH);  //LED HIJAU on
+      digitalWrite(LED_pin5, LOW);   //LED MERAH on
+      digitalWrite(LED_pin6, LOW);   //LED KUNING on
+    }
+
+
+    if (pox.getSpO2() > 94) {
+      digitalWrite(LED_pin3, LOW);   //LED MERAH oFF
+      digitalWrite(LED_pin4, HIGH);  //LED HIJAU ON
+      digitalWrite(LED_pin8, LOW);   //LED KUNING oFF
+    }
+
+    if (pox.getSpO2() > 89 && pox.getSpO2() < 95) {
+      digitalWrite(LED_pin3, LOW);   //LED MERAH oFF
+      digitalWrite(LED_pin4, LOW);   //LED HIJAU oFF
+      digitalWrite(LED_pin8, HIGH);  //LED KUNING ON
+    }
+
+    if (pox.getSpO2() < 90) {
+      digitalWrite(LED_pin3, HIGH);  //LED MERAH ON
+      digitalWrite(LED_pin4, LOW);   //LED HIJAU oFF
+      digitalWrite(LED_pin8, LOW);   //LED KUNING oFF
+    }
+
+    {
+      bpm = pox.getHeartRate();
+      spo = pox.getSpO2();
+      // Blynk.virtualWrite(V5, bpm);
+      // Blynk.virtualWrite(V6, spo);
+
+      if (WiFi.status() == WL_CONNECTED) {
+        WiFiClient client;
+        HTTPClient http;
+
+        // Your Domain name with URL path or IP address with path
+        http.begin(client, serverName);
+
+        // Specify content-type header
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+        String httpRequestData = "api_key=" + apiKeyValue + "&bpm=" + String(pox.getHeartRate()) + "&o2=" + String(pox.getSpO2()) + "";
+        Serial.print("httpRequestData: ");
+        Serial.println(httpRequestData);
+
+        int httpResponseCode = http.POST(httpRequestData);
+
+
+        if (httpResponseCode > 0) {
+          Serial.print("HTTP Response code: ");
+          Serial.println(httpResponseCode);
+        } else {
+          Serial.print("Error code: ");
+          Serial.println(httpResponseCode);
+        }
+        // Free resources
+        http.end();
+      } else {
+        Serial.println("WiFi Disconnected");
+      }
+    }
   }
-  //Send an HTTP POST request every 30 seconds
-  delay(30000);
 }
